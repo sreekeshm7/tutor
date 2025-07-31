@@ -10,5 +10,5 @@ docx
 PyPDF2
 requests
 bs4
-     
+exceptions    
 
