@@ -3,6 +3,11 @@ from groq_config import get_llm
 from langchain.prompts import ChatPromptTemplate
 from langchain.chains import LLMChain
 
+from docx import Document
+from PyPDF2 import PdfReader
+import requests
+from bs4 import BeautifulSoup
+
 # --- System Prompt ---
 SYSTEM_PROMPT = """
 You are a highly intelligent and professional Physics Tutor with expertise in competitive exams such as IIT-JAM, CSIR-NET, and GATE Physics. 
@@ -24,7 +29,6 @@ Always assume the student has a basic undergraduate-level understanding of physi
 
 If a question is ambiguous, clearly state assumptions before answering.
 """
-
 
 # --- Streamlit Config ---
 st.set_page_config(page_title="🧠 Physics Tutor – JAM/NET/GATE", page_icon="🔬", layout="centered")
@@ -75,22 +79,70 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 # --- Title ---
-st.markdown('<div class="main-title">🧠 Physics Tutor by Sreekesh M </div>', unsafe_allow_html=True)
+st.markdown('<div class="main-title">🧠 Physics Tutor by Sreekesh M</div>', unsafe_allow_html=True)
+
+# --- Text Extraction Utilities ---
+def extract_text_from_pdf(file):
+    try:
+        reader = PdfReader(file)
+        return "\n".join([page.extract_text() for page in reader.pages if page.extract_text()])
+    except Exception as e:
+        return f"Error reading PDF: {e}"
+
+def extract_text_from_docx(file):
+    try:
+        doc = Document(file)
+        return "\n".join([para.text for para in doc.paragraphs if para.text.strip()])
+    except Exception as e:
+        return f"Error reading DOCX: {e}"
+
+def extract_text_from_url(url):
+    try:
+        response = requests.get(url, timeout=10)
+        soup = BeautifulSoup(response.text, "html.parser")
+        return soup.get_text(separator="\n")
+    except Exception as e:
+        return f"Error reading URL: {e}"
 
 # --- Form Input ---
 with st.form(key="physics_form"):
     query = st.text_input("📌 Enter your Physics question below:", placeholder="e.g., Derive the Schrödinger equation.", key="question")
+    uploaded_file = st.file_uploader("📄 Optionally upload a file (PDF or DOCX):", type=["pdf", "docx"])
+    url_input = st.text_input("🌐 Optionally paste a webpage URL (e.g., NPTEL, Wikipedia):")
     submit_button = st.form_submit_button("🚀 Get Answer")
 
-# --- Generate Answer ---
+# --- Answer Generation ---
 if submit_button and query:
     with st.spinner("🧠 Thinking..."):
+        # Optional context from file or URL
+        context = ""
+        if uploaded_file:
+            if uploaded_file.name.endswith(".pdf"):
+                context = extract_text_from_pdf(uploaded_file)
+            elif uploaded_file.name.endswith(".docx"):
+                context = extract_text_from_docx(uploaded_file)
+        elif url_input:
+            context = extract_text_from_url(url_input)
+
+        # Limit context size (avoid LLM overload)
+        context = context.strip()
+        if len(context) > 3000:
+            context = context[:3000] + "\n...[Content trimmed]"
+
+        # Create final prompt for LLM
+        if context:
+            full_prompt = f"""You may use the following reference content if helpful:\n\n{context}\n\nQuestion: {query}"""
+        else:
+            full_prompt = query
+
+        # Run LLM chain
         llm = get_llm()
         prompt = ChatPromptTemplate.from_messages([
             ("system", SYSTEM_PROMPT),
             ("human", "{question}")
         ])
         chain = LLMChain(llm=llm, prompt=prompt)
-        response = chain.run({"question": query})
+        response = chain.run({"question": full_prompt})
 
+        # Show Answer
         st.markdown('<div class="answer-box">{}</div>'.format(response), unsafe_allow_html=True)
