@@ -12,7 +12,7 @@ def get_llm():
         raise ValueError("GROQ_API_KEY not set in .env file or environment variables.")
     
     return ChatGroq(
-        model="llama‑3.3‑70b‑versatile",
+        model="llama3-8b-8192",
         api_key=api_key
     )
 
